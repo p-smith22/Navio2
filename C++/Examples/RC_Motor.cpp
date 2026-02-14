@@ -1,119 +1,97 @@
-// Include header files:
-#include <cstdio>
-#include <Navio2/RCInput_Navio2.h>
-#include <Navio+/RCInput_Navio.h>
-#include <memory>
 #include <unistd.h>
+#include <cstdio>
+#include <memory>
+#include <vector>
 #include "Navio2/PWM.h"
-#include "Navio+/RCOutput_Navio.h"
 #include "Navio2/RCOutput_Navio2.h"
+#include "Navio+/RCOutput_Navio.h"
+#include "Navio2/RCInput_Navio2.h"
+#include "Navio+/RCInput_Navio.h"
 #include "Common/Util.h"
-
-// Define constants:
-#define READ_FAILED -1
-#define THRESHOLD 1750
-#define PWM_Output { 0, 1, 2, 3 }
-#define FEED_US 50000
 
 using namespace Navio;
 
-std::unique_ptr <RCOutput> get_rcout()
-{
-    if (get_navio_version() == NAVIO2)
-    {
-        auto ptr = std::unique_ptr <RCOutput>{ new RCOutput_Navio2() };
-        return ptr;
-    } else
-    {
-        auto ptr = std::unique_ptr <RCOutput>{ new RCOutput_Navio() };
-        return ptr;
-    }
+constexpr int NUM_MOTORS  = 4;
+constexpr int PWM_START   = 0;       // Motor PWM channels 0-3
+constexpr int SERVO_MIN   = 1000;    // µs
+constexpr int SERVO_MAX   = 2000;    // µs
+constexpr int SERVO_IDLE  = 1100;    // µs
+constexpr int FEED_US     = 50000;   // 50 ms
 
-}
+constexpr int CHANNEL_THROTTLE = 2;  // RC input channel for throttle
+constexpr int CHANNEL_SAFETY   = 5;  // Safety switch channel
+constexpr int CHANNEL_AUTO     = 6;  // Autonomy switch channel
 
-std::unique_ptr <RCInput> get_rcin()
-{
+#define READ_FAILED -1
+
+// Create RCOutput depending on board
+std::unique_ptr<RCOutput> get_rcout() {
     if (get_navio_version() == NAVIO2)
-    {
-        auto ptr = std::unique_ptr <RCInput>{ new RCInput_Navio2() };
-        return ptr;
-    } 
-    
+        return std::make_unique<RCOutput_Navio2>();
     else
-    {
-        auto ptr = std::unique_ptr <RCInput>{ new RCInput_Navio() };
-        return ptr;
-    }
-
+        return std::make_unique<RCOutput_Navio>();
 }
 
-int main(int argc, char *argv[])
-{
-    if (check_apm()) {
-        return 1;
-    }
-    auto rcin = get_rcin();
-    rcin->initialize();
+// Create RCInput depending on board
+std::unique_ptr<RCInput> get_rcin() {
+    if (get_navio_version() == NAVIO2)
+        return std::make_unique<RCInput_Navio2>();
+    else
+        return std::make_unique<RCInput_Navio>();
+}
 
-    std::unique_ptr <RCOutput> pwm = get_rcout();
-
-    if (check_apm()) {
-        return 1;
-    }
+int main() {
+    if (check_apm()) return 1;
 
     if (getuid()) {
-        fprintf(stderr, "Not root. Please launch like this: sudo %s\n", argv[0]);
-    }
-
-    if( !(pwm->initialize(PWM_OUTPUT)) ) {
+        fprintf(stderr, "Not root. Use: sudo\n");
         return 1;
     }
 
-	pwm->set_frequency(PWM_OUTPUT, 400);
+    auto pwm = get_rcout();
+    auto rcin = get_rcin();
 
-	if ( !(pwm->enable(PWM_OUTPUT)) ) {
-	    return 1;
-	}
-
-    while (true)
-    {
-        int period = rcin->read(2);
-        if (period == READ_FAILED)
-            return EXIT_FAILURE;
-        printf("%d\n", period);
-        
-        sleep(1);
+    // Initialize all 4 motor channels
+    for (int i = 0; i < NUM_MOTORS; ++i) {
+        if (!pwm->initialize(PWM_START + i)) return 1;
+        pwm->set_frequency(PWM_START + i, 400);
+        if (!pwm->enable(PWM_START + i)) return 1;
+        pwm->set_duty_cycle(PWM_START + i, SERVO_MIN);
     }
 
+    // Initialize RC input
+    rcin->initialize();
 
+    printf("Starting motors control loop. Safety up = stop motors.\n");
 
-    const int loops = (2.0 <= 0.0) ? 0 : static_cast<int>(2.0 * 1000000 / FEED_US);
-    for (int i = 0; i < loops; ++i) {
-        pwm->set_duty_cycle(PWM_OUTPUT, SERVO_MIN);
+    while (true) {
+        int throttle = rcin->read(CHANNEL_THROTTLE);
+        int safety   = rcin->read(CHANNEL_SAFETY);
+        int autonomy = rcin->read(CHANNEL_AUTO);
+
+        if (throttle == READ_FAILED || safety == READ_FAILED || autonomy == READ_FAILED) {
+            fprintf(stderr, "RC read failed\n");
+            return 1;
+        }
+
+        // Determine mode
+        const char* mode = (autonomy > 1750) ? "AUTO" : "MANUAL";
+
+        // Safety switch: if up (value > 1500), cut all motors
+        if (safety > 1750) {
+            for (int i = 0; i < NUM_MOTORS; ++i)
+                pwm->set_duty_cycle(PWM_START + i, SERVO_MIN);
+            printf("[SAFETY] Motors cut\n");
+        } else {
+            // Otherwise, send throttle to all motors
+            for (int i = 0; i < NUM_MOTORS; ++i)
+                pwm->set_duty_cycle(PWM_START + i, throttle);
+
+            printf("[%s] Throttle %d\n", mode, throttle);
+        }
+
         usleep(FEED_US);
     }
-    // Ensure we write at least once even if seconds < FEED_US
-    if (loops == 0) {
-        pwm->set_duty_cycle(PWM_OUTPUT, SERVO_MIN);
-        usleep(FEED_US);
-    }
-
-    printf("Sending command - for 2 seconds\n");
-    for (int i = 0; i < loops; ++i) {
-        pwm->set_duty_cycle(PWM_OUTPUT, SERVO_TEST);
-        usleep(FEED_US);
-    }
-    // Ensure we write at least once even if seconds < FEED_US
-    if (loops == 0) {
-        pwm->set_duty_cycle(PWM_OUTPUT, SERVO_TEST);
-        usleep(FEED_US);
-    }
-    #endif
-
-    printf("Stop\n");
-    pwm->set_duty_cycle(PWM_OUTPUT, SERVO_MIN);
-    usleep(FEED_US);
 
     return 0;
 }
-

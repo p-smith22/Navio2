@@ -1,6 +1,6 @@
 #include <unistd.h>
 #include <cstdio>
-
+#include <cstdlib>
 #include <Navio2/RCInput_Navio2.h>
 #include <Navio+/RCInput_Navio.h>
 #include <Common/Util.h>
@@ -10,11 +10,12 @@
 
 std::unique_ptr <RCInput> get_rcin()
 {
-    if (get_navio_version() == NAVIO2) {
+    if (get_navio_version() == NAVIO2)
+    {
         auto ptr = std::unique_ptr <RCInput>{ new RCInput_Navio2() };
         return ptr;
-    } 
-    else {
+    } else
+    {
         auto ptr = std::unique_ptr <RCInput>{ new RCInput_Navio() };
         return ptr;
     }
@@ -44,4 +45,3 @@ int main(int argc, char *argv[])
 
     return 0;
 }
-

@@ -27,17 +27,17 @@ constexpr int CHANNEL_AUTO     = 6;  // Autonomy switch channel
 // Create RCOutput depending on board
 std::unique_ptr<RCOutput> get_rcout() {
     if (get_navio_version() == NAVIO2)
-        return std::make_unique<RCOutput_Navio2>();
+        return std::unique_ptr<RCOutput_Navio2>(new RCOutput_Navio2());
     else
-        return std::make_unique<RCOutput_Navio>();
+        return std::unique_ptr<RCOutput_Navio>(new RCOutput_Navio());
 }
 
 // Create RCInput depending on board
 std::unique_ptr<RCInput> get_rcin() {
     if (get_navio_version() == NAVIO2)
-        return std::make_unique<RCInput_Navio2>();
+        return std::unique_ptr<RCInput_Navio2>(new RCInput_Navio2());
     else
-        return std::make_unique<RCInput_Navio>();
+        return std::unique_ptr<RCInput_Navio>(new RCInput_Navio());
 }
 
 int main() {

@@ -13,10 +13,13 @@ using namespace Navio;
 
 constexpr int NUM_MOTORS  = 4;
 constexpr int PWM_START   = 0;
+constexpr int PAYLOAD_PIN = 4;
 
 constexpr int SERVO_MIN   = 1000;
 constexpr int SERVO_MAX   = 1600;   
 constexpr int SERVO_IDLE  = 1100;
+constexpr int PAYLOAD_MIN = 1250;
+constexpr int PAYLOAD_MAX = 1750;
 
 constexpr int FEED_US     = 50000; 
 
@@ -89,7 +92,7 @@ int main() {
     printf("Safety ON = motors cut.\n");
 
 
-    int throttle, safety, autonomy;
+    int throttle, safety, autonomy, ;
 
     while (true) {
 
@@ -110,6 +113,17 @@ int main() {
         }
 
         const char* mode = (autonomy > 1750) ? "AUTO" : "MANUAL";
+
+        // =====================
+        // PAYLOAD DROPPER
+        // =====================
+        pwm->set_frequency(PAYLOAD_PIN, 50);
+        if (autonomy < 1250) {
+            pwm->set_duty_cycle(PWM_OUTPUT, PAYLOAD_MAX);
+        else {
+            pwm->set_duty_cycle(PWM_OUTPUT, PAYLOAD_MIN);
+        }
+
 
         // =====================
         // SAFETY CUT
